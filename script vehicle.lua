@@ -2,14 +2,14 @@
     Vehicle Teleport by OLODEH - A Client-Side Executor Script for Delta
 
     Features:
-    - Highly reliable and stable UI.
+    - Highly reliable and stable UI with fully functional buttons.
     - Save and load teleport points to a local file.
     - Custom names for teleport points.
     - Multiple Teleport Methods (CFrame, BodyForce, BodyVelocity).
     - Loop through saved points with a custom delay.
     - Automatically detects the player's vehicle (more universal).
     - Minimize and Maximize buttons.
-    - Horizontal table for saved points with Teleport and Delete buttons.
+    - Horizontal table for saved points that is scrollable.
     - Dedicated Settings menu for a cleaner layout.
     - Smooth and informative notification pop-ups.
     
@@ -26,6 +26,7 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer.PlayerGui
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
 
 -- CORE VARIABLES
 local TeleportPoints = {}
@@ -425,7 +426,7 @@ function SavePointsToFile()
             z = point.Position.Z
         })
     end
-    local jsonData = game:GetService("HttpService"):JSONEncode(data)
+    local jsonData = HttpService:JSONEncode(data)
     writefile(FILENAME, jsonData)
     ShowNotification("Points saved to " .. FILENAME)
 end
@@ -439,7 +440,7 @@ function LoadPointsFromFile()
     end
     
     local success, data = pcall(function()
-        return game:GetService("HttpService"):JSONDecode(jsonData)
+        return HttpService:JSONDecode(jsonData)
     end)
     
     if success and data then
@@ -544,7 +545,15 @@ function SetTeleportMethod(method)
     CFrameButton.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
     BodyForceButton.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
     BodyVelocityButton.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-    _G[method .. "Button"].BackgroundColor3 = Color3.new(0, 0.5, 0.8)
+    
+    if method == "CFrame" then
+        CFrameButton.BackgroundColor3 = Color3.new(0, 0.5, 0.8)
+    elseif method == "BodyForce" then
+        BodyForceButton.BackgroundColor3 = Color3.new(0, 0.5, 0.8)
+    elseif method == "BodyVelocity" then
+        BodyVelocityButton.BackgroundColor3 = Color3.new(0, 0.5, 0.8)
+    end
+
     ShowNotification("Teleport method set to " .. method .. ".")
 end
 
