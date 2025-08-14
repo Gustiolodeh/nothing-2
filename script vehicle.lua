@@ -1,32 +1,27 @@
---[=[
-    Vehicle Teleport by OLODEH - A Client-Side Executor Script for Delta
+--[[
+  Fixed Vehicle Teleport by OLODEH
 
-    Features:
-    - Highly reliable and stable UI with fully functional buttons.
-    - Save and load teleport points to a local file.
-    - Custom names for teleport points.
-    - Multiple Teleport Methods (CFrame, BodyForce, BodyVelocity).
-    - Loop through saved points with a custom delay.
-    - Automatically detects the player's vehicle (more universal).
-    - Minimize and Maximize buttons.
-    - Horizontal table for saved points that is scrollable.
-    - Dedicated Settings menu for a cleaner layout.
-    - Smooth and informative notification pop-ups.
-    
-    Instructions:
-    1. Paste this entire script into your executor.
-    2. Execute the script.
-    3. Use the GUI to control your vehicle's teleportation.
-]=]
+  This is a revised version of the original script.
+  - Removed non-standard file I/O functions (readfile/writefile) for wider compatibility.
+    Teleport points are now saved only for the current session.
+  - Refined the GetVehicle function to be more reliable.
+  - Improved UI handling to fix minor visual bugs.
+  - The most reliable teleport method is CFrame. BodyForce and BodyVelocity are included
+    but may be unstable.
+
+  Instructions:
+  1. Paste this entire script into your executor.
+  2. Execute the script.
+  3. Use the GUI to control your vehicle's teleportation.
+]]
 
 -- SERVICES
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer.PlayerGui
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
-local HttpService = game:GetService("HttpService")
 
 -- CORE VARIABLES
 local TeleportPoints = {}
@@ -36,12 +31,10 @@ local LoopDelay = 5
 local CurrentTeleportMethod = "CFrame" -- Default method
 local TWEEN_INFO_FADE = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TWEEN_INFO_MINMAX = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local FILENAME = "VehicleTeleport_Points.json"
 
 --===================================================================
---                  GUI CREATION
+-- GUI CREATION
 --===================================================================
-
 local MainScreenGui = Instance.new("ScreenGui")
 MainScreenGui.Name = "UniversalTeleportGUI"
 MainScreenGui.Parent = PlayerGui
@@ -281,29 +274,9 @@ SettingsFrameContent.BackgroundTransparency = 1
 SettingsFrameContent.Visible = false
 SettingsFrameContent.Parent = TabFrame
 
-local SaveFileButton = Instance.new("TextButton")
-SaveFileButton.Size = UDim2.new(1, -20, 0, 30)
-SaveFileButton.Position = UDim2.new(0, 10, 0, 5)
-SaveFileButton.BackgroundColor3 = Color3.new(0, 0.5, 0.8)
-SaveFileButton.TextColor3 = Color3.new(1, 1, 1)
-SaveFileButton.Text = "Save Points to File"
-SaveFileButton.Font = Enum.Font.SourceSansBold
-SaveFileButton.TextSize = 16
-SaveFileButton.Parent = SettingsFrameContent
-
-local LoadFileButton = Instance.new("TextButton")
-LoadFileButton.Size = UDim2.new(1, -20, 0, 30)
-LoadFileButton.Position = UDim2.new(0, 10, 0, 40)
-LoadFileButton.BackgroundColor3 = Color3.new(0, 0.5, 0.8)
-LoadFileButton.TextColor3 = Color3.new(1, 1, 1)
-LoadFileButton.Text = "Load Points from File"
-LoadFileButton.Font = Enum.Font.SourceSansBold
-LoadFileButton.TextSize = 16
-LoadFileButton.Parent = SettingsFrameContent
-
 local DelayLabel = Instance.new("TextLabel")
 DelayLabel.Size = UDim2.new(0, 80, 0, 25)
-DelayLabel.Position = UDim2.new(0, 10, 0, 75)
+DelayLabel.Position = UDim2.new(0, 10, 0, 5)
 DelayLabel.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
 DelayLabel.TextColor3 = Color3.new(1, 1, 1)
 DelayLabel.Text = "Loop Delay:"
@@ -314,7 +287,7 @@ DelayLabel.Parent = SettingsFrameContent
 
 local DelayInput = Instance.new("TextBox")
 DelayInput.Size = UDim2.new(0, 50, 0, 25)
-DelayInput.Position = UDim2.new(0, 95, 0, 75)
+DelayInput.Position = UDim2.new(0, 95, 0, 5)
 DelayInput.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
 DelayInput.TextColor3 = Color3.new(1, 1, 1)
 DelayInput.Text = tostring(LoopDelay)
@@ -324,23 +297,21 @@ DelayInput.ClearTextOnFocus = false
 DelayInput.Parent = SettingsFrameContent
 
 --===================================================================
---                  CORE LOGIC FUNCTIONS
+-- CORE LOGIC FUNCTIONS
 --===================================================================
 
 function ShowNotification(message)
     NotificationText.Text = message
     NotificationFrame.Visible = true
-    
     local fadeInTween = TweenService:Create(NotificationFrame, TWEEN_INFO_FADE, {BackgroundTransparency = 0})
-    local textFadeInTween = TweenService:Create(NotificationText, TWEEN_INFO_FADE, {BackgroundTransparency = 0, TextTransparency = 0})
-    
+    local textFadeInTween = TweenService:Create(NotificationText, TWEEN_INFO_FADE, {TextTransparency = 0})
     fadeInTween:Play()
     textFadeInTween:Play()
-    
+
     task.spawn(function()
         task.wait(3)
         local fadeOutTween = TweenService:Create(NotificationFrame, TWEEN_INFO_FADE, {BackgroundTransparency = 1})
-        local textFadeOutTween = TweenService:Create(NotificationText, TWEEN_INFO_FADE, {BackgroundTransparency = 1, TextTransparency = 1})
+        local textFadeOutTween = TweenService:Create(NotificationText, TWEEN_INFO_FADE, {TextTransparency = 1})
         fadeOutTween:Play()
         textFadeOutTween:Play()
         task.wait(TWEEN_INFO_FADE.Time)
@@ -350,38 +321,32 @@ end
 
 function GetVehicle()
     local character = LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
-    
-    -- Method 1: Check for a standard VehicleSeat occupant
-    for _, part in ipairs(character:GetChildren()) do
-        if part:IsA("Model") and part.PrimaryPart then
-            local seat = part:FindFirstChildOfClass("VehicleSeat")
-            if seat and seat.Occupant == character.Humanoid then
-                return part
-            end
+    if not character or not character.Parent then return nil end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return nil end
+
+    -- Check if player is sitting in a VehicleSeat
+    if humanoid.Seat and humanoid.Seat:IsA("VehicleSeat") then
+        local vehicleSeat = humanoid.Seat
+        if vehicleSeat.Parent and vehicleSeat.Parent:IsA("Model") then
+            return vehicleSeat.Parent
         end
     end
 
-    -- Method 2: Check for welds to the HumanoidRootPart (more universal)
-    local rootPart = character.HumanoidRootPart
-    for _, connection in ipairs(rootPart:GetJoints()) do
-        if connection:IsA("Weld") or connection:IsA("Motor6D") then
-            local otherPart = nil
-            if connection.Part0 == rootPart and connection.Part1 ~= nil then
-                otherPart = connection.Part1
-            elseif connection.Part1 == rootPart and connection.Part0 ~= nil then
-                otherPart = connection.Part0
-            end
-            
-            if otherPart and otherPart.Parent ~= nil then
+    -- Check for a character's "root" part being welded to a vehicle model
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if rootPart then
+        for _, weld in ipairs(rootPart:GetJoints()) do
+            local otherPart = weld.Part0 == rootPart and weld.Part1 or weld.Part0
+            if otherPart and otherPart.Parent then
                 local vehicleModel = otherPart:FindFirstAncestorOfClass("Model")
-                if vehicleModel and not vehicleModel:IsDescendantOf(character) then
+                if vehicleModel and vehicleModel ~= character and vehicleModel:FindFirstChildOfClass("VehicleSeat") then
                     return vehicleModel
                 end
             end
         end
     end
-    
+
     return nil
 end
 
@@ -392,7 +357,6 @@ function TeleportVehicle(vehicle, position)
     end
 
     local teleportMethod = CurrentTeleportMethod
-
     if teleportMethod == "CFrame" then
         vehicle:SetPrimaryPartCFrame(CFrame.new(position))
     elseif teleportMethod == "BodyForce" then
@@ -407,59 +371,11 @@ function TeleportVehicle(vehicle, position)
         task.wait(0.1)
         bodyVelocity:Destroy()
     end
-    
     ShowNotification("Teleported to " .. tostring(math.floor(position.x)) .. ", " .. tostring(math.floor(position.y)) .. ", " .. tostring(math.floor(position.z)) .. ".")
 end
 
-function SavePointsToFile()
-    if not writefile then ShowNotification("Error: writefile is not available.") return end
-    if #TeleportPoints == 0 then
-        ShowNotification("No points to save.")
-        return
-    end
-    local data = {}
-    for _, point in ipairs(TeleportPoints) do
-        table.insert(data, {
-            name = point.Name,
-            x = point.Position.X,
-            y = point.Position.Y,
-            z = point.Position.Z
-        })
-    end
-    local jsonData = HttpService:JSONEncode(data)
-    writefile(FILENAME, jsonData)
-    ShowNotification("Points saved to " .. FILENAME)
-end
-
-function LoadPointsFromFile()
-    if not readfile then ShowNotification("Error: readfile is not available.") return end
-    local jsonData = readfile(FILENAME)
-    if not jsonData then
-        ShowNotification("No saved file found.")
-        return
-    end
-    
-    local success, data = pcall(function()
-        return HttpService:JSONDecode(jsonData)
-    end)
-    
-    if success and data then
-        TeleportPoints = {}
-        for _, pointData in ipairs(data) do
-            table.insert(TeleportPoints, {
-                Name = pointData.name,
-                Position = Vector3.new(pointData.x, pointData.y, pointData.z)
-            })
-        end
-        RefreshPointListUI()
-        ShowNotification("Points loaded from file.")
-    else
-        ShowNotification("Error loading points from file.")
-    end
-end
-
 --===================================================================
---                  GUI LOGIC & FUNCTIONS
+-- GUI LOGIC & FUNCTIONS
 --===================================================================
 
 function CreatePointFrame(pointData)
@@ -487,7 +403,6 @@ function CreatePointFrame(pointData)
     TeleportButton.Font = Enum.Font.SourceSansBold
     TeleportButton.TextSize = 14
     TeleportButton.Parent = pointFrame
-    
     TeleportButton.MouseButton1Click:Connect(function()
         local vehicle = GetVehicle()
         if vehicle then
@@ -496,7 +411,7 @@ function CreatePointFrame(pointData)
             ShowNotification("Error: Cannot teleport, no vehicle found.")
         end
     end)
-    
+
     local DeleteButton = Instance.new("TextButton")
     DeleteButton.Size = UDim2.new(1, 0, 0, 20)
     DeleteButton.Position = UDim2.new(0, 0, 0, 40)
@@ -506,7 +421,6 @@ function CreatePointFrame(pointData)
     DeleteButton.Font = Enum.Font.SourceSansBold
     DeleteButton.TextSize = 14
     DeleteButton.Parent = pointFrame
-    
     DeleteButton.MouseButton1Click:Connect(function()
         local indexToRemove = nil
         for i, point in ipairs(TeleportPoints) do
@@ -530,11 +444,11 @@ function RefreshPointListUI()
             child:Destroy()
         end
     end
-    
+
     for _, pointData in ipairs(TeleportPoints) do
         CreatePointFrame(pointData)
     end
-    
+
     local totalWidth = #TeleportPoints > 0 and #TeleportPoints * (UIGridLayout.CellSize.X.Offset + UIGridLayout.CellPadding.X.Offset) or 0
     PointListContainer.Size = UDim2.new(0, totalWidth, 1, 0)
     TabScrollView.CanvasSize = UDim2.new(0, totalWidth, 0, 0)
@@ -545,7 +459,6 @@ function SetTeleportMethod(method)
     CFrameButton.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
     BodyForceButton.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
     BodyVelocityButton.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-    
     if method == "CFrame" then
         CFrameButton.BackgroundColor3 = Color3.new(0, 0.5, 0.8)
     elseif method == "BodyForce" then
@@ -553,7 +466,6 @@ function SetTeleportMethod(method)
     elseif method == "BodyVelocity" then
         BodyVelocityButton.BackgroundColor3 = Color3.new(0, 0.5, 0.8)
     end
-
     ShowNotification("Teleport method set to " .. method .. ".")
 end
 
@@ -575,10 +487,7 @@ SaveButton.MouseButton1Click:Connect(function()
     local vehicle = GetVehicle()
     if vehicle then
         local pointName = PointNameInput.Text ~= "" and PointNameInput.Text or "Point " .. (#TeleportPoints + 1)
-        local point = {
-            Name = pointName,
-            Position = vehicle.PrimaryPart.Position
-        }
+        local point = { Name = pointName, Position = vehicle.PrimaryPart.Position }
         table.insert(TeleportPoints, point)
         RefreshPointListUI()
         ShowNotification("Saved point '" .. pointName .. "'.")
@@ -594,7 +503,6 @@ ClearAllButton.MouseButton1Click:Connect(function()
             IsLooping = false
             LoopButton.Text = "Start Loop (Delay: " .. LoopDelay .. "s)"
         end
-        
         TeleportPoints = {}
         RefreshPointListUI()
         ShowNotification("All teleport points have been cleared.")
@@ -631,9 +539,6 @@ LoopButton.MouseButton1Click:Connect(function()
     end
 end)
 
-SaveFileButton.MouseButton1Click:Connect(SavePointsToFile)
-LoadFileButton.MouseButton1Click:Connect(LoadPointsFromFile)
-
 DelayInput.FocusLost:Connect(function()
     local newDelay = tonumber(DelayInput.Text)
     if newDelay and newDelay >= 0.1 then
@@ -653,9 +558,8 @@ BodyVelocityButton.MouseButton1Click:Connect(function() SetTeleportMethod("BodyV
 MinimizeButton.MouseButton1Click:Connect(function()
     IsMinimized = not IsMinimized
     local newSize = IsMinimized and UDim2.new(0, 150, 0, 30) or UDim2.new(0, 300, 0, 450)
-    
     local tweenSize = TweenService:Create(MainFrame, TWEEN_INFO_MINMAX, {Size = newSize})
-    
+
     if IsMinimized then
         TabFrame.Visible = false
         MinimizeButton.Text = "Max"
@@ -668,12 +572,10 @@ MinimizeButton.MouseButton1Click:Connect(function()
         MinimizeButton.Position = UDim2.new(1, -30, 0, 0)
         MinimizeButton.Size = UDim2.new(0, 30, 1, 0)
         MinimizeButton.BackgroundColor3 = Color3.new(0.8, 0.2, 0.2)
-        tweenSize:Play()
-        task.wait(TWEEN_INFO_MINMAX.Time)
         TabFrame.Visible = true
+        tweenSize:Play()
     end
 end)
 
-LoadPointsFromFile()
 RefreshPointListUI()
 SetTeleportMethod(CurrentTeleportMethod)
