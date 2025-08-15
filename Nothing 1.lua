@@ -1,9 +1,11 @@
---! Delta Script: Ultimate Multi-Feature GUI
+--! Delta Script: Lithos Mining Tools By Gustiolodeh
+-- Discord: gustiolodeh
 
 --[[
-    Skrip ini telah diperbarui untuk:
-    - Membuat fitur "Damage Nullifier" bisa diaktifkan/dinonaktifkan menggunakan tombol.
-    - Menghilangkan aktivasi otomatis fitur tersebut saat skrip dimuat.
+    Versi skrip ini telah diperbarui dengan fitur-fitur berikut:
+    - Smart TP Walk yang stabil dan mengikuti pergerakan pemain.
+    - Fly Mode untuk terbang bebas.
+    - Kedua fitur dapat diaktifkan/dinonaktifkan dan dikustomisasi.
 ]]
 
 --------------------------------------------------------------------------------
@@ -16,10 +18,12 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Lighting = game:GetService("Lighting")
+local HttpService = game:GetService("HttpService")
 
 local localPlayer = Players.LocalPlayer
 local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
 local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
 
 -- Configurable lists for searching
 local searchObjectNames = {}
@@ -28,26 +32,39 @@ local foundObjects = {}
 local searchMonsterNames = {"Deep Mimic", "Lush Rock Person", "Mimic", "Rock Person"}
 local foundMonsters = {}
 
+-- Initial settings
 local isObjectEspEnabled = false
+local objectEspRadius = 500
 local isMonsterEspEnabled = false
 local isDamageNullified = false
 local isMonsterFrozen = false
 local isAutoBrightEnabled = false
+local isAutoMiningEnabled = false
+local isTpwalkEnabled = false
+local isFlyEnabled = false
+
 local originalLightingProperties = {}
 local originalMonsterWalkspeeds = {}
 local originalTakeDamage = {}
 
 local espConnection = nil
-local objectEspRadius = 500
 local monsterEspRadius = 500
+local autoMiningRadius = 150
+local autoMiningWait = 0.5
 
--- Configurable shops
-local shopList = {
-    ["Shop Keeper"] = {eventName = "OpenShop", eventParameter = "Shop Keeper"},
-    ["Shop Keeper 2"] = {eventName = "OpenShop", eventParameter = "Shop Keeper 2"},
-    ["Shop Keeper 3"] = {eventName = "OpenShop", eventParameter = "Shop Keeper 3"},
-    ["Bandit"] = {eventName = "OpenShop", eventParameter = "Bandit"}
-}
+-- Waypoint storage
+local waypoints = {}
+local searchTerm = ""
+
+-- TPWALK Variables
+local TpwalkValue = 1
+local TpwalkConnection = nil
+local TpwalkNegativeValues = false
+
+-- FLY Variables
+local FlySpeed = 20
+local FlyConnection = nil
+local originalWalkSpeed = humanoid.WalkSpeed
 
 --------------------------------------------------------------------------------
 -- GUI CREATION
@@ -61,8 +78,8 @@ local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
 mainFrame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
 mainFrame.BorderSizePixel = 0
-mainFrame.Size = UDim2.new(0, 240, 0, 110)
-mainFrame.Position = UDim2.new(0, 10, 0, 10)
+mainFrame.Size = UDim2.new(0, 400, 0, 300)
+mainFrame.Position = UDim2.new(0.5, -200, 0.5, -150)
 mainFrame.ZIndex = 1
 mainFrame.Parent = screenGui
 
@@ -84,14 +101,25 @@ topBar.Parent = mainFrame
 
 local titleLabel = Instance.new("TextLabel")
 titleLabel.Name = "TitleLabel"
-titleLabel.Text = "Ultimate Multi-Feature"
-titleLabel.TextColor3 = Color3.new(1, 1, 1)
+titleLabel.Text = "Lithos Mining Tools"
+titleLabel.TextColor3 = Color3.new(1, 1, 1) -- Ini akan diganti
 titleLabel.Font = Enum.Font.SourceSansBold
 titleLabel.TextSize = 16
 titleLabel.BackgroundTransparency = 1
-titleLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
+titleLabel.Position = UDim2.new(0.5, 0, 0.5, -10)
 titleLabel.AnchorPoint = Vector2.new(0.5, 0.5)
 titleLabel.Parent = topBar
+
+local creditLabel = Instance.new("TextLabel")
+creditLabel.Name = "CreditLabel"
+creditLabel.Text = "By Gustiolodeh"
+creditLabel.TextColor3 = Color3.new(0.8, 0.8, 0.8)
+creditLabel.Font = Enum.Font.SourceSans
+creditLabel.TextSize = 12
+creditLabel.BackgroundTransparency = 1
+creditLabel.Position = UDim2.new(0.5, 0, 0.5, 5)
+creditLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+creditLabel.Parent = topBar
 
 local minMaxButton = Instance.new("TextButton")
 minMaxButton.Name = "MinimizeButton"
@@ -115,18 +143,87 @@ closeButton.Size = UDim2.new(0, 30, 1, 0)
 closeButton.Position = UDim2.new(1, -30, 0, 0)
 closeButton.Parent = topBar
 
+-- Konten utama sekarang berada di dalam ScrollingFrame
+local contentScrollingFrame = Instance.new("ScrollingFrame")
+contentScrollingFrame.Name = "ContentScrollingFrame"
+contentScrollingFrame.BackgroundTransparency = 1
+contentScrollingFrame.Size = UDim2.new(1, 0, 1, -30)
+contentScrollingFrame.Position = UDim2.new(0, 0, 0, 30)
+contentScrollingFrame.BorderSizePixel = 0
+contentScrollingFrame.CanvasSize = UDim2.new(0, 0, 2, 0)
+contentScrollingFrame.Parent = mainFrame
+
 local contentFrame = Instance.new("Frame")
 contentFrame.Name = "ContentFrame"
 contentFrame.BackgroundTransparency = 1
-contentFrame.Size = UDim2.new(1, 0, 1, -30)
-contentFrame.Position = UDim2.new(0, 0, 0, 30)
-contentFrame.Parent = mainFrame
+contentFrame.Size = UDim2.new(1, -20, 1, 0) -- -20 agar ada ruang untuk scrollbar
+contentFrame.Position = UDim2.new(0, 0, 0, 0)
+contentFrame.Parent = contentScrollingFrame
 
-local horizontalLayout = Instance.new("UIListLayout")
-horizontalLayout.FillDirection = Enum.FillDirection.Horizontal
-horizontalLayout.Padding = UDim.new(0, 5)
-horizontalLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-horizontalLayout.Parent = contentFrame
+local verticalLayout = Instance.new("UIListLayout")
+verticalLayout.FillDirection = Enum.FillDirection.Vertical
+verticalLayout.Padding = UDim.new(0, 5)
+verticalLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+verticalLayout.Parent = contentFrame
+
+-- WAYPOINT MANAGER SECTION
+local waypointHeader = Instance.new("TextButton")
+waypointHeader.Name = "WaypointHeader"
+waypointHeader.Text = "Waypoint Manager"
+waypointHeader.TextColor3 = Color3.new(1, 1, 1)
+waypointHeader.Font = Enum.Font.SourceSansBold
+waypointHeader.TextSize = 16
+waypointHeader.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+waypointHeader.Size = UDim2.new(1, 0, 0, 30)
+waypointHeader.Parent = contentFrame
+
+local waypointContent = Instance.new("Frame")
+waypointContent.Name = "WaypointContent"
+waypointContent.BackgroundTransparency = 1
+waypointContent.Size = UDim2.new(1, 0, 0, 250)
+waypointContent.Visible = false
+waypointContent.Parent = contentFrame
+
+local waypointLayout = Instance.new("UIListLayout")
+waypointLayout.FillDirection = Enum.FillDirection.Vertical
+waypointLayout.Padding = UDim.new(0, 5)
+waypointLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+waypointLayout.Parent = waypointContent
+
+local waypointNameBox = Instance.new("TextBox")
+waypointNameBox.Name = "WaypointNameBox"
+waypointNameBox.PlaceholderText = "Enter waypoint name"
+waypointNameBox.Text = ""
+waypointNameBox.Font = Enum.Font.SourceSans
+waypointNameBox.TextSize = 16
+waypointNameBox.TextColor3 = Color3.new(1, 1, 1)
+waypointNameBox.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+waypointNameBox.Size = UDim2.new(0.9, 0, 0, 30)
+waypointNameBox.Parent = waypointContent
+
+local addWaypointButton = Instance.new("TextButton")
+addWaypointButton.Name = "AddWaypointButton"
+addWaypointButton.Text = "Add Current Location"
+addWaypointButton.TextColor3 = Color3.new(1, 1, 1)
+addWaypointButton.Font = Enum.Font.SourceSansBold
+addWaypointButton.TextSize = 18
+addWaypointButton.BackgroundColor3 = Color3.new(0.3, 0.8, 0.3)
+addWaypointButton.Size = UDim2.new(0.9, 0, 0, 40)
+addWaypointButton.Parent = waypointContent
+
+local waypointListScrollingFrame = Instance.new("ScrollingFrame")
+waypointListScrollingFrame.Name = "WaypointList"
+waypointListScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+waypointListScrollingFrame.Size = UDim2.new(0.9, 0, 1, -80)
+waypointListScrollingFrame.BackgroundTransparency = 1
+waypointListScrollingFrame.BorderColor3 = Color3.new(0, 0, 0)
+waypointListScrollingFrame.BorderSizePixel = 1
+waypointListScrollingFrame.Parent = waypointContent
+
+local waypointListLayout = Instance.new("UIListLayout")
+waypointListLayout.FillDirection = Enum.FillDirection.Vertical
+waypointListLayout.Padding = UDim.new(0, 5)
+waypointListLayout.Parent = waypointListScrollingFrame
 
 -- FINDER SECTION
 local finderHeader = Instance.new("TextButton")
@@ -136,13 +233,13 @@ finderHeader.TextColor3 = Color3.new(1, 1, 1)
 finderHeader.Font = Enum.Font.SourceSansBold
 finderHeader.TextSize = 16
 finderHeader.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-finderHeader.Size = UDim2.new(0, 110, 0, 30)
+finderHeader.Size = UDim2.new(1, 0, 0, 30)
 finderHeader.Parent = contentFrame
 
 local finderContent = Instance.new("Frame")
 finderContent.Name = "FinderContent"
 finderContent.BackgroundTransparency = 1
-finderContent.Size = UDim2.new(0, 200, 0, 200)
+finderContent.Size = UDim2.new(1, 0, 0, 250)
 finderContent.Visible = false
 finderContent.Parent = contentFrame
 
@@ -173,6 +270,17 @@ findButton.BackgroundColor3 = Color3.new(0.3, 0.3, 0.8)
 findButton.Size = UDim2.new(0.9, 0, 0, 40)
 findButton.Parent = finderContent
 
+-- Auto Mine button
+local autoMineButton = Instance.new("TextButton")
+autoMineButton.Name = "AutoMineButton"
+autoMineButton.Text = "Auto Mine OFF"
+autoMineButton.TextColor3 = Color3.new(1, 1, 1)
+autoMineButton.Font = Enum.Font.SourceSansBold
+autoMineButton.TextSize = 18
+autoMineButton.BackgroundColor3 = Color3.new(0.8, 0.3, 0.3)
+autoMineButton.Size = UDim2.new(0.9, 0, 0, 40)
+autoMineButton.Parent = finderContent
+
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Name = "StatusLabel"
 statusLabel.Text = "Enter a search term."
@@ -186,7 +294,7 @@ statusLabel.Parent = finderContent
 local scrollingFrame = Instance.new("ScrollingFrame")
 scrollingFrame.Name = "ObjectList"
 scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-scrollingFrame.Size = UDim2.new(0.9, 0, 1, -120)
+scrollingFrame.Size = UDim2.new(0.9, 0, 1, -160)
 scrollingFrame.BackgroundTransparency = 1
 scrollingFrame.BorderColor3 = Color3.new(0, 0, 0)
 scrollingFrame.BorderSizePixel = 1
@@ -205,13 +313,13 @@ objectEspHeader.TextColor3 = Color3.new(1, 1, 1)
 objectEspHeader.Font = Enum.Font.SourceSansBold
 objectEspHeader.TextSize = 16
 objectEspHeader.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-objectEspHeader.Size = UDim2.new(0, 110, 0, 30)
+objectEspHeader.Size = UDim2.new(1, 0, 0, 30)
 objectEspHeader.Parent = contentFrame
 
 local objectEspContent = Instance.new("Frame")
 objectEspContent.Name = "ObjectEspContent"
 objectEspContent.BackgroundTransparency = 1
-objectEspContent.Size = UDim2.new(0, 200, 0, 80)
+objectEspContent.Size = UDim2.new(1, 0, 0, 80)
 objectEspContent.Visible = false
 objectEspContent.Parent = contentFrame
 
@@ -250,13 +358,13 @@ monsterEspHeader.TextColor3 = Color3.new(1, 1, 1)
 monsterEspHeader.Font = Enum.Font.SourceSansBold
 monsterEspHeader.TextSize = 16
 monsterEspHeader.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-monsterEspHeader.Size = UDim2.new(0, 110, 0, 30)
+monsterEspHeader.Size = UDim2.new(1, 0, 0, 30)
 monsterEspHeader.Parent = contentFrame
 
 local monsterEspContent = Instance.new("Frame")
 monsterEspContent.Name = "MonsterEspContent"
 monsterEspContent.BackgroundTransparency = 1
-monsterEspContent.Size = UDim2.new(0, 200, 0, 175)
+monsterEspContent.Size = UDim2.new(1, 0, 0, 175)
 monsterEspContent.Visible = false
 monsterEspContent.Parent = contentFrame
 
@@ -296,30 +404,6 @@ damageNullifierButton.BackgroundColor3 = Color3.new(0.8, 0.3, 0.3)
 damageNullifierButton.Size = UDim2.new(0.9, 0, 0, 40)
 damageNullifierButton.Parent = monsterEspContent
 
--- REMOTE SHOP SECTION
-local remoteShopHeader = Instance.new("TextButton")
-remoteShopHeader.Name = "RemoteShopHeader"
-remoteShopHeader.Text = "Remote Shop"
-remoteShopHeader.TextColor3 = Color3.new(1, 1, 1)
-remoteShopHeader.Font = Enum.Font.SourceSansBold
-remoteShopHeader.TextSize = 16
-remoteShopHeader.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-remoteShopHeader.Size = UDim2.new(0, 110, 0, 30)
-remoteShopHeader.Parent = contentFrame
-
-local remoteShopContent = Instance.new("Frame")
-remoteShopContent.Name = "RemoteShopContent"
-remoteShopContent.BackgroundTransparency = 1
-remoteShopContent.Size = UDim2.new(0, 200, 0, 180)
-remoteShopContent.Visible = false
-remoteShopContent.Parent = contentFrame
-
-local remoteShopLayout = Instance.new("UIListLayout")
-remoteShopLayout.FillDirection = Enum.FillDirection.Vertical
-remoteShopLayout.Padding = UDim.new(0, 5)
-remoteShopLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-remoteShopLayout.Parent = remoteShopContent
-
 -- VISUALS SECTION
 local visualsHeader = Instance.new("TextButton")
 visualsHeader.Name = "VisualsHeader"
@@ -328,13 +412,13 @@ visualsHeader.TextColor3 = Color3.new(1, 1, 1)
 visualsHeader.Font = Enum.Font.SourceSansBold
 visualsHeader.TextSize = 16
 visualsHeader.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-visualsHeader.Size = UDim2.new(0, 110, 0, 30)
+visualsHeader.Size = UDim2.new(1, 0, 0, 30)
 visualsHeader.Parent = contentFrame
 
 local visualsContent = Instance.new("Frame")
 visualsContent.Name = "VisualsContent"
 visualsContent.BackgroundTransparency = 1
-visualsContent.Size = UDim2.new(0, 200, 0, 50)
+visualsContent.Size = UDim2.new(1, 0, 0, 50)
 visualsContent.Visible = false
 visualsContent.Parent = contentFrame
 
@@ -354,42 +438,146 @@ brightMapButton.BackgroundColor3 = Color3.new(0.8, 0.3, 0.3)
 brightMapButton.Size = UDim2.new(0.9, 0, 0, 40)
 brightMapButton.Parent = visualsContent
 
--- Set up content positions (horizontal)
-local function updateContentPositions()
-    local xOffset = 0
-    for i, header in ipairs(contentFrame:GetChildren()) do
-        if header:IsA("TextButton") then
-            local content = contentFrame:FindFirstChild(header.Name:gsub("Header", "Content"))
-            if content then
-                content.Position = UDim2.new(0, xOffset, 0, 35)
-                xOffset = xOffset + header.Size.X.Offset + 5
-            end
-        end
-    end
-end
-updateContentPositions()
+-- PLAYER FEATURES SECTION
+local playerFeaturesHeader = Instance.new("TextButton")
+playerFeaturesHeader.Name = "PlayerFeaturesHeader"
+playerFeaturesHeader.Text = "Player Features"
+playerFeaturesHeader.TextColor3 = Color3.new(1, 1, 1)
+playerFeaturesHeader.Font = Enum.Font.SourceSansBold
+playerFeaturesHeader.TextSize = 16
+playerFeaturesHeader.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+playerFeaturesHeader.Size = UDim2.new(1, 0, 0, 30)
+playerFeaturesHeader.Parent = contentFrame
 
+local playerFeaturesContent = Instance.new("Frame")
+playerFeaturesContent.Name = "PlayerFeaturesContent"
+playerFeaturesContent.BackgroundTransparency = 1
+playerFeaturesContent.Size = UDim2.new(1, 0, 0, 240)
+playerFeaturesContent.Visible = false
+playerFeaturesContent.Parent = contentFrame
+
+local playerFeaturesLayout = Instance.new("UIListLayout")
+playerFeaturesLayout.FillDirection = Enum.FillDirection.Vertical
+playerFeaturesLayout.Padding = UDim.new(0, 5)
+playerFeaturesLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+playerFeaturesLayout.Parent = playerFeaturesContent
+
+-- FLY Mode
+local flyButton = Instance.new("TextButton")
+flyButton.Name = "FlyButton"
+flyButton.Text = "Fly OFF"
+flyButton.TextColor3 = Color3.new(1, 1, 1)
+flyButton.Font = Enum.Font.SourceSansBold
+flyButton.TextSize = 18
+flyButton.BackgroundColor3 = Color3.new(0.8, 0.3, 0.3)
+flyButton.Size = UDim2.new(0.9, 0, 0, 40)
+flyButton.Parent = playerFeaturesContent
+
+-- TPWALK Section
+local tpwalkLabel = Instance.new("TextLabel")
+tpwalkLabel.Name = "TpwalkValueLabel"
+tpwalkLabel.Text = "TPWALK Value: 1"
+tpwalkLabel.TextColor3 = Color3.new(1, 1, 1)
+tpwalkLabel.Font = Enum.Font.SourceSansBold
+tpwalkLabel.TextSize = 16
+tpwalkLabel.BackgroundTransparency = 1
+tpwalkLabel.Size = UDim2.new(0.9, 0, 0, 20)
+tpwalkLabel.Parent = playerFeaturesContent
+
+local tpwalkValueBox = Instance.new("TextBox")
+tpwalkValueBox.Name = "TpwalkValueBox"
+tpwalkValueBox.PlaceholderText = "TPWALK Value (e.g., 5)"
+tpwalkValueBox.Text = "1"
+tpwalkValueBox.Font = Enum.Font.SourceSans
+tpwalkValueBox.TextSize = 16
+tpwalkValueBox.TextColor3 = Color3.new(1, 1, 1)
+tpwalkValueBox.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+tpwalkValueBox.Size = UDim2.new(0.9, 0, 0, 30)
+tpwalkValueBox.Parent = playerFeaturesContent
+
+local tpwalkButton = Instance.new("TextButton")
+tpwalkButton.Name = "TpwalkButton"
+tpwalkButton.Text = "TPWALK OFF"
+tpwalkButton.TextColor3 = Color3.new(1, 1, 1)
+tpwalkButton.Font = Enum.Font.SourceSansBold
+tpwalkButton.TextSize = 18
+tpwalkButton.BackgroundColor3 = Color3.new(0.8, 0.3, 0.3)
+tpwalkButton.Size = UDim2.new(0.9, 0, 0, 40)
+tpwalkButton.Parent = playerFeaturesContent
+
+local tpwalkNegativeButton = Instance.new("TextButton")
+tpwalkNegativeButton.Name = "TpwalkNegativeButton"
+tpwalkNegativeButton.Text = "Negative Values OFF"
+tpwalkNegativeButton.TextColor3 = Color3.new(1, 1, 1)
+tpwalkNegativeButton.Font = Enum.Font.SourceSansBold
+tpwalkNegativeButton.TextSize = 18
+tpwalkNegativeButton.BackgroundColor3 = Color3.new(0.8, 0.3, 0.3)
+tpwalkNegativeButton.Size = UDim2.new(0.9, 0, 0, 40)
+tpwalkNegativeButton.Parent = playerFeaturesContent
+
+-- Add a resizable corner button
+local resizeButton = Instance.new("TextButton")
+resizeButton.Name = "ResizeButton"
+resizeButton.Text = "" -- Tanpa teks
+resizeButton.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+resizeButton.Size = UDim2.new(0, 15, 0, 15)
+resizeButton.Position = UDim2.new(1, -15, 1, -15)
+resizeButton.AnchorPoint = Vector2.new(0.5, 0.5)
+resizeButton.ZIndex = 2
+resizeButton.Parent = mainFrame
+
+-- Character Status Display
+local statusDisplay = Instance.new("TextLabel")
+statusDisplay.Name = "StatusDisplay"
+statusDisplay.Text = "Loading..."
+statusDisplay.TextColor3 = Color3.new(1, 1, 1)
+statusDisplay.TextSize = 16
+statusDisplay.Font = Enum.Font.SourceSans
+statusDisplay.Size = UDim2.new(0.4, 0, 0, 60)
+statusDisplay.Position = UDim2.new(0.5, 0, 0.05, 0)
+statusDisplay.AnchorPoint = Vector2.new(0.5, 0)
+statusDisplay.BackgroundTransparency = 0.8
+statusDisplay.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+statusDisplay.TextWrapped = true
+statusDisplay.Parent = screenGui
 
 --------------------------------------------------------------------------------
 -- DRAGGING AND GUI CONTROL LOGIC
 --------------------------------------------------------------------------------
 local isDragging = false
 local dragStartPos = nil
+local isResizing = false
+local resizeStartSize = nil
+local resizeStartPos = nil
 
 -- Dictionary to manage collapsed state
 local sections = {
+    Waypoint = {header = waypointHeader, content = waypointContent, size = waypointContent.Size},
     Finder = {header = finderHeader, content = finderContent, size = finderContent.Size},
     ObjectEsp = {header = objectEspHeader, content = objectEspContent, size = objectEspContent.Size},
     MonsterEsp = {header = monsterEspHeader, content = monsterEspContent, size = monsterEspContent.Size},
-    RemoteShop = {header = remoteShopHeader, content = remoteShopContent, size = remoteShopContent.Size},
-    Visuals = {header = visualsHeader, content = visualsContent, size = visualsContent.Size}
+    Visuals = {header = visualsHeader, content = visualsContent, size = visualsContent.Size},
+    PlayerFeatures = {header = playerFeaturesHeader, content = playerFeaturesContent, size = playerFeaturesContent.Size},
 }
+
+local function updateContentHeight()
+    local totalHeight = 0
+    -- Add the height of each section header and content frame if visible
+    for _, section in pairs(sections) do
+        totalHeight = totalHeight + section.header.Size.Y.Offset + verticalLayout.Padding.Offset
+        if section.content.Visible then
+            totalHeight = totalHeight + section.content.Size.Y.Offset + verticalLayout.Padding.Offset
+        end
+    end
+    -- Set CanvasSize of ScrollingFrame
+    contentScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, totalHeight)
+end
 
 local function toggleSection(sectionName)
     local section = sections[sectionName]
     local isVisible = section.content.Visible
     section.content.Visible = not isVisible
-    updateContentPositions()
+    updateContentHeight()
 end
 
 for name, section in pairs(sections) do
@@ -398,6 +586,7 @@ for name, section in pairs(sections) do
     end)
 end
 
+-- Dragging logic
 topBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         isDragging = true
@@ -405,9 +594,19 @@ topBar.InputBegan:Connect(function(input)
     end
 end)
 
+-- Resizing logic
+resizeButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isResizing = true
+        resizeStartSize = mainFrame.AbsoluteSize
+        resizeStartPos = input.Position
+    end
+end)
+
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         isDragging = false
+        isResizing = false
     end
 end)
 
@@ -416,18 +615,25 @@ UserInputService.InputChanged:Connect(function(input)
         local delta = input.Position - dragStartPos
         mainFrame.Position = mainFrame.Position + UDim2.new(0, delta.X, 0, delta.Y)
         dragStartPos = input.Position
+    elseif isResizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - resizeStartPos
+        local newSizeX = math.max(150, resizeStartSize.X + delta.X)
+        local newSizeY = math.max(100, resizeStartSize.Y + delta.Y)
+        mainFrame.Size = UDim2.new(0, newSizeX, 0, newSizeY)
     end
 end)
 
 local isMinimized = false
 minMaxButton.MouseButton1Click:Connect(function()
     if isMinimized then
-        mainFrame:TweenSize(UDim2.new(0, 240, 0, 110), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2)
-        contentFrame.Visible = true
+        mainFrame:TweenSize(UDim2.new(0, mainFrame.AbsoluteSize.X, 0, 300), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2)
+        contentScrollingFrame.Visible = true
+        resizeButton.Visible = true
         minMaxButton.Text = "-"
     else
-        mainFrame:TweenSize(UDim2.new(0, 240, 0, 30), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2)
-        contentFrame.Visible = false
+        mainFrame:TweenSize(UDim2.new(0, mainFrame.AbsoluteSize.X, 0, 30), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2)
+        contentScrollingFrame.Visible = false
+        resizeButton.Visible = false
         minMaxButton.Text = "◻"
     end
     isMinimized = not isMinimized
@@ -438,7 +644,7 @@ closeButton.MouseButton1Click:Connect(function()
 end)
 
 --------------------------------------------------------------------------------
--- RGB OUTLINE ANIMATION
+-- RGB OUTLINE AND TITLE ANIMATION
 --------------------------------------------------------------------------------
 local function runRGB()
     local colorTransitionSpeed = 0.005
@@ -448,6 +654,7 @@ local function runRGB()
         if hue > 1 then hue = 0 end
         local color = Color3.fromHSV(hue, 1, 1)
         mainStroke.Color = color
+        titleLabel.TextColor3 = color -- Tambahkan baris ini
         RunService.Heartbeat:Wait()
     end
 end
@@ -495,6 +702,13 @@ local function teleportTo(object)
     humanoidRootPart.CFrame = CFrame.new(newPosition)
 end
 
+local function teleportToPosition(position)
+    if not humanoidRootPart then return end
+    
+    local newPosition = position + Vector3.new(0, 5, 0)
+    humanoidRootPart.CFrame = CFrame.new(newPosition)
+end
+
 local function findObjects(nameList)
     local results = {}
     for _, child in ipairs(workspace:GetDescendants()) do
@@ -508,7 +722,7 @@ local function findObjects(nameList)
     return results
 end
 
-local function populateList(objects)
+local function populateObjectList(objects)
     for _, child in ipairs(scrollingFrame:GetChildren()) do
         if child.Name == "ListItem" then
             child:Destroy()
@@ -546,7 +760,6 @@ end
 
 -- Nullify Damage function for player (now a toggle)
 local function nullifyDamage(enabled)
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
 
     if enabled then
@@ -564,37 +777,15 @@ local function nullifyDamage(enabled)
     end
 end
 
--- Remote Shop function
-local function openShop(shopName)
-    local shopData = shopList[shopName]
-    if not shopData then
-        statusLabel.Text = "Shop '" .. shopName .. "' not found."
-        return
-    end
-
-    -- Attempt to find and fire a RemoteEvent
-    local remoteEvent = ReplicatedStorage:FindFirstChild(shopData.eventName)
-    if remoteEvent and remoteEvent:IsA("RemoteEvent") then
-        if shopData.eventParameter then
-            remoteEvent:FireServer(shopData.eventParameter)
-        else
-            remoteEvent:FireServer()
-        end
-        statusLabel.Text = "Trying to open " .. shopName .. "..."
-    else
-        statusLabel.Text = "Failed to find remote event for " .. shopName .. "."
-    end
-end
-
 -- Freeze Monsters function
 local function freezeMonsters(enabled)
     if enabled then
         local monsterFound = false
         for _, monster in ipairs(foundMonsters) do
-            local humanoid = monster:FindFirstChildOfClass("Humanoid")
-            if humanoid and not originalMonsterWalkspeeds[humanoid] then
-                originalMonsterWalkspeeds[humanoid] = humanoid.WalkSpeed
-                humanoid.WalkSpeed = 0
+            local monsterHumanoid = monster:FindFirstChildOfClass("Humanoid")
+            if monsterHumanoid and not originalMonsterWalkspeeds[monsterHumanoid] then
+                originalMonsterWalkspeeds[monsterHumanoid] = monsterHumanoid.WalkSpeed
+                monsterHumanoid.WalkSpeed = 0
                 monsterFound = true
             end
         end
@@ -604,9 +795,9 @@ local function freezeMonsters(enabled)
             statusLabel.Text = "Monsters are frozen."
         end
     else
-        for humanoid, originalSpeed in pairs(originalMonsterWalkspeeds) do
-            if humanoid and humanoid.Parent then
-                humanoid.WalkSpeed = originalSpeed
+        for monsterHumanoid, originalSpeed in pairs(originalMonsterWalkspeeds) do
+            if monsterHumanoid and monsterHumanoid.Parent then
+                monsterHumanoid.WalkSpeed = originalSpeed
             end
         end
         originalMonsterWalkspeeds = {}
@@ -616,46 +807,231 @@ end
 
 -- Auto Bright Map function
 local function autoBrightMap(enabled)
-    if enabled then
-        originalLightingProperties.Brightness = Lighting.Brightness
-        originalLightingProperties.Ambient = Lighting.Ambient
-        originalLightingProperties.OutdoorAmbient = Lighting.OutdoorAmbient
-        originalLightingProperties.ClockTime = Lighting.ClockTime
-        
-        Lighting.Brightness = 2
-        Lighting.Ambient = Color3.new(0.6, 0.6, 0.6)
-        Lighting.OutdoorAmbient = Color3.new(0.6, 0.6, 0.6)
-        Lighting.ClockTime = 12
-        statusLabel.Text = "Auto bright map enabled."
-    else
-        Lighting.Brightness = originalLightingProperties.Brightness
-        Lighting.Ambient = originalLightingProperties.Ambient
-        Lighting.OutdoorAmbient = originalLightingProperties.OutdoorAmbient
-        Lighting.ClockTime = originalLightingProperties.ClockTime
-        statusLabel.Text = "Auto bright map disabled."
+    local success, err = pcall(function()
+        if enabled then
+            originalLightingProperties.Brightness = Lighting.Brightness
+            originalLightingProperties.Ambient = Lighting.Ambient
+            originalLightingProperties.OutdoorAmbient = Lighting.OutdoorAmbient
+            originalLightingProperties.ClockTime = Lighting.ClockTime
+            
+            Lighting.Brightness = 2
+            Lighting.Ambient = Color3.new(0.6, 0.6, 0.6)
+            Lighting.OutdoorAmbient = Color3.new(0.6, 0.6, 0.6)
+            Lighting.ClockTime = 12
+            statusLabel.Text = "Auto bright map enabled."
+        else
+            Lighting.Brightness = originalLightingProperties.Brightness
+            Lighting.Ambient = originalLightingProperties.Ambient
+            Lighting.OutdoorAmbient = originalLightingProperties.OutdoorAmbient
+            Lighting.ClockTime = originalLightingProperties.ClockTime
+            statusLabel.Text = "Auto bright map disabled."
+        end
+    end)
+    if not success then
+        statusLabel.Text = "Error applying lighting settings: " .. (err or "unknown error")
     end
 end
 
--- Create buttons for each shop
-for name, data in pairs(shopList) do
-    local shopButton = Instance.new("TextButton")
-    shopButton.Name = "ShopButton_" .. name:gsub(" ", "")
-    shopButton.Text = "Open " .. name
-    shopButton.TextColor3 = Color3.new(1, 1, 1)
-    shopButton.Font = Enum.Font.SourceSansBold
-    shopButton.TextSize = 18
-    shopButton.BackgroundColor3 = Color3.new(0.3, 0.6, 0.9)
-    shopButton.Size = UDim2.new(0.9, 0, 0, 40)
-    shopButton.Parent = remoteShopContent
+-- Auto Mining function
+local function autoMine()
+    while isAutoMiningEnabled do
+        local myPosition = humanoidRootPart.Position
 
-    shopButton.MouseButton1Click:Connect(function()
-        openShop(name)
-    end)
+        -- Find the closest mineable object
+        local closestOre = nil
+        local closestDistance = autoMiningRadius + 1
+
+        local allMineableObjects = findObjects({searchTerm})
+        for _, object in ipairs(allMineableObjects) do
+            if object and object.Parent then
+                local position = object:IsA("Model") and object.PrimaryPart and object.PrimaryPart.Position or object.Position
+                local distance = (position - myPosition).magnitude
+
+                if distance <= autoMiningRadius and distance < closestDistance then
+                    closestOre = object
+                    closestDistance = distance
+                end
+            end
+        end
+
+        if closestOre then
+            statusLabel.Text = "Auto-mining " .. closestOre.Name .. "..."
+
+            -- Find a suitable pickaxe
+            local pickaxe = nil
+            -- Check if character is already holding a pickaxe
+            if character.Humanoid.Parent and character.Humanoid.Parent:FindFirstChildOfClass("Tool") and string.find(character.Humanoid.Parent:FindFirstChildOfClass("Tool").Name:lower(), "pickaxe") then
+                pickaxe = character.Humanoid.Parent:FindFirstChildOfClass("Tool")
+            else
+                -- Search backpack
+                for _, tool in ipairs(localPlayer.Backpack:GetChildren()) do
+                    if string.find(tool.Name:lower(), "pickaxe") then
+                        pickaxe = tool
+                        break
+                    end
+                end
+            end
+            
+            if pickaxe then
+                -- Equip the pickaxe if not already equipped
+                if character.Humanoid.Parent:FindFirstChild(pickaxe.Name) == nil then
+                    character.Humanoid:EquipTool(pickaxe)
+                    task.wait(0.2) -- Wait for equip animation
+                end
+                
+                -- Teleport to the ore for instant mining
+                local orePosition = closestOre:IsA("Model") and closestOre.PrimaryPart and closestOre.PrimaryPart.Position or closestOre.Position
+                local teleportPos = orePosition + (humanoidRootPart.Position - orePosition).unit * 5
+                humanoidRootPart.Cframe = CFrame.new(teleportPos, orePosition)
+                
+                -- Simulate attack
+                pickaxe:Activate()
+            else
+                statusLabel.Text = "No pickaxe found in inventory or backpack."
+                isAutoMiningEnabled = false
+                autoMineButton.Text = "Auto Mine OFF"
+                autoMineButton.BackgroundColor3 = Color3.new(0.8, 0.3, 0.3)
+            end
+        else
+            statusLabel.Text = "No " .. searchTerm .. " found within range. Waiting..."
+            -- To avoid an infinite loop in case of no ores
+            task.wait(1)
+        end
+        
+        task.wait(autoMiningWait)
+    end
+end
+
+-- Waypoint functions
+local function populateWaypointList()
+    for _, child in ipairs(waypointListScrollingFrame:GetChildren()) do
+        if child.Name == "WaypointItem" then
+            child:Destroy()
+        end
+    end
+    
+    local totalHeight = 0
+    for name, pos in pairs(waypoints) do
+        local waypointItem = Instance.new("Frame")
+        waypointItem.Name = "WaypointItem"
+        waypointItem.BackgroundColor3 = Color3.new(0.25, 0.25, 0.25)
+        waypointItem.Size = UDim2.new(1, 0, 0, 30)
+        waypointItem.Parent = waypointListScrollingFrame
+        
+        local waypointNameLabel = Instance.new("TextLabel")
+        waypointNameLabel.Text = name
+        waypointNameLabel.TextColor3 = Color3.new(1, 1, 1)
+        waypointNameLabel.Font = Enum.Font.SourceSans
+        waypointNameLabel.TextSize = 14
+        waypointNameLabel.BackgroundTransparency = 1
+        waypointNameLabel.Position = UDim2.new(0.05, 0, 0.5, 0)
+        waypointNameLabel.AnchorPoint = Vector2.new(0, 0.5)
+        waypointNameLabel.Parent = waypointItem
+        
+        local teleportButton = Instance.new("TextButton")
+        teleportButton.Text = "Teleport"
+        teleportButton.TextColor3 = Color3.new(1, 1, 1)
+        teleportButton.Font = Enum.Font.SourceSansBold
+        teleportButton.TextSize = 14
+        teleportButton.BackgroundColor3 = Color3.new(0.3, 0.6, 0.9)
+        teleportButton.Size = UDim2.new(0, 70, 0.8, 0)
+        teleportButton.Position = UDim2.new(1, -145, 0.5, 0)
+        teleportButton.AnchorPoint = Vector2.new(1, 0.5)
+        teleportButton.Parent = waypointItem
+        
+        teleportButton.MouseButton1Click:Connect(function()
+            teleportToPosition(pos)
+            statusLabel.Text = "Teleported to " .. name .. "!"
+        end)
+        
+        local deleteButton = Instance.new("TextButton")
+        deleteButton.Text = "Delete"
+        deleteButton.TextColor3 = Color3.new(1, 1, 1)
+        deleteButton.Font = Enum.Font.SourceSansBold
+        deleteButton.TextSize = 14
+        deleteButton.BackgroundColor3 = Color3.new(0.8, 0.3, 0.3)
+        deleteButton.Size = UDim2.new(0, 50, 0.8, 0)
+        deleteButton.Position = UDim2.new(1, -85, 0.5, 0)
+        deleteButton.AnchorPoint = Vector2.new(1, 0.5)
+        deleteButton.Parent = waypointItem
+        
+        deleteButton.MouseButton1Click:Connect(function()
+            waypoints[name] = nil
+            populateWaypointList()
+            statusLabel.Text = "Waypoint '" .. name .. "' deleted."
+        end)
+
+        totalHeight = totalHeight + waypointItem.Size.Y.Offset + waypointListLayout.Padding.Offset
+    end
+    
+    waypointListScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, totalHeight)
+    updateContentHeight()
+end
+
+-- TPWALK and FLY functions
+local function startTpwalk()
+    if not TpwalkConnection then
+        TpwalkConnection = RunService.Heartbeat:Connect(function()
+            if isTpwalkEnabled and humanoid and humanoidRootPart then
+                humanoidRootPart.CFrame += (humanoid.MoveDirection * TpwalkValue)
+                humanoidRootPart.CanCollide = true
+            end
+        end)
+    end
+end
+
+local function stopTpwalk()
+    if TpwalkConnection then
+        TpwalkConnection:Disconnect()
+        TpwalkConnection = nil
+        if humanoid and humanoidRootPart then
+            humanoidRootPart.CanCollide = false
+        end
+    end
+end
+
+local function startFly()
+    if not FlyConnection then
+        FlyConnection = RunService.Heartbeat:Connect(function()
+            if isFlyEnabled and humanoidRootPart then
+                local moveDirection = UserInputService:GetMoveVector()
+                local flyVector = Vector3.new(moveDirection.X, (UserInputService:IsKeyDown(Enum.KeyCode.Space) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) and 1 or 0), moveDirection.Z)
+                humanoidRootPart.CFrame += CFrame.new(flyVector * FlySpeed)
+            end
+        end)
+        humanoid.WalkSpeed = 0
+        humanoid.JumpPower = 0
+    end
+end
+
+local function stopFly()
+    if FlyConnection then
+        FlyConnection:Disconnect()
+        FlyConnection = nil
+        humanoid.WalkSpeed = originalWalkSpeed
+        humanoid.JumpPower = humanoid.WalkSpeed
+    end
 end
 
 -- Main Button Logic
+addWaypointButton.MouseButton1Click:Connect(function()
+    local name = waypointNameBox.Text
+    if name == "" then
+        statusLabel.Text = "Please enter a name for the waypoint."
+        return
+    end
+    
+    if waypoints[name] then
+        statusLabel.Text = "Waypoint '" .. name .. "' already exists. Overwriting..."
+    end
+    
+    waypoints[name] = humanoidRootPart.Position
+    statusLabel.Text = "Waypoint '" .. name .. "' added!"
+    populateWaypointList()
+end)
+
 findButton.MouseButton1Click:Connect(function()
-    local searchTerm = searchBox.Text
+    searchTerm = searchBox.Text
     if searchTerm == "" then
         statusLabel.Text = "Please enter a search term."
         return
@@ -666,35 +1042,56 @@ findButton.MouseButton1Click:Connect(function()
     
     searchObjectNames = {searchTerm}
     local objects = findObjects(searchObjectNames)
-    populateList(objects)
+    populateObjectList(objects)
 
     findButton.BackgroundColor3 = Color3.new(0.3, 0.3, 0.8)
     findButton.Text = "Find Objects"
 end)
 
-objectEspButton.MouseButton1Click:Connect(function()
-    if isObjectEspEnabled then
-        isObjectEspEnabled = false
-        objectEspButton.Text = "ESP OFF"
-        objectEspButton.BackgroundColor3 = Color3.new(0.8, 0.3, 0.3)
-    else
-        local newRadius = tonumber(objectEspRadiusBox.Text)
-        if newRadius and newRadius > 0 then
-            objectEspRadius = newRadius
-        else
-            statusLabel.Text = "Invalid ESP Radius!"
-            return
-        end
+autoMineButton.MouseButton1Click:Connect(function()
+    isAutoMiningEnabled = not isAutoMiningEnabled
 
-        isObjectEspEnabled = true
+    if isAutoMiningEnabled then
+        autoMineButton.Text = "Auto Mine ON"
+        autoMineButton.BackgroundColor3 = Color3.new(0.3, 0.8, 0.3)
+        spawn(autoMine)
+    else
+        autoMineButton.Text = "Auto Mine OFF"
+        autoMineButton.BackgroundColor3 = Color3.new(0.8, 0.3, 0.3)
+        statusLabel.Text = "Auto mining stopped."
+    end
+end)
+
+
+objectEspButton.MouseButton1Click:Connect(function()
+    local newRadius = tonumber(objectEspRadiusBox.Text)
+    if newRadius and newRadius > 0 then
+        objectEspRadius = newRadius
+    else
+        statusLabel.Text = "Invalid ESP Radius! Setting to default."
+        objectEspRadius = 500
+        objectEspRadiusBox.Text = "500"
+    end
+
+    isObjectEspEnabled = not isObjectEspEnabled
+
+    if isObjectEspEnabled then
         objectEspButton.Text = "ESP ON"
         objectEspButton.BackgroundColor3 = Color3.new(0.3, 0.8, 0.3)
+    else
+        objectEspButton.Text = "ESP OFF"
+        objectEspButton.BackgroundColor3 = Color3.new(0.8, 0.3, 0.3)
     end
 end)
 
 monsterEspButton.MouseButton1Click:Connect(function()
+    isMonsterEspEnabled = not isMonsterEspEnabled
+
     if isMonsterEspEnabled then
-        isMonsterEspEnabled = false
+        monsterEspButton.Text = "ESP ON"
+        monsterEspButton.BackgroundColor3 = Color3.new(0.3, 0.8, 0.3)
+        foundMonsters = findObjects(searchMonsterNames)
+    else
         monsterEspButton.Text = "ESP OFF"
         monsterEspButton.BackgroundColor3 = Color3.new(0.8, 0.3, 0.3)
         
@@ -704,17 +1101,12 @@ monsterEspButton.MouseButton1Click:Connect(function()
                 existingEsp:Destroy()
             end
         end
-    else
-        isMonsterEspEnabled = true
-        monsterEspButton.Text = "ESP ON"
-        monsterEspButton.BackgroundColor3 = Color3.new(0.3, 0.8, 0.3)
-
-        foundMonsters = findObjects(searchMonsterNames)
     end
 end)
 
 monsterFreezerButton.MouseButton1Click:Connect(function()
     isMonsterFrozen = not isMonsterFrozen
+
     if isMonsterFrozen then
         monsterFreezerButton.Text = "Monsters Frozen"
         monsterFreezerButton.BackgroundColor3 = Color3.new(0.3, 0.8, 0.3)
@@ -728,6 +1120,7 @@ end)
 
 damageNullifierButton.MouseButton1Click:Connect(function()
     isDamageNullified = not isDamageNullified
+    
     if isDamageNullified then
         damageNullifierButton.Text = "Damage Nullified ON"
         damageNullifierButton.BackgroundColor3 = Color3.new(0.3, 0.8, 0.3)
@@ -741,6 +1134,7 @@ end)
 
 brightMapButton.MouseButton1Click:Connect(function()
     isAutoBrightEnabled = not isAutoBrightEnabled
+    
     if isAutoBrightEnabled then
         brightMapButton.Text = "Bright Map ON"
         brightMapButton.BackgroundColor3 = Color3.new(0.3, 0.8, 0.3)
@@ -752,11 +1146,88 @@ brightMapButton.MouseButton1Click:Connect(function()
     end
 end)
 
--- Heartbeat loop for dynamic ESP and Monster Freezer
+flyButton.MouseButton1Click:Connect(function()
+    isFlyEnabled = not isFlyEnabled
+    if isFlyEnabled then
+        isTpwalkEnabled = false
+        tpwalkButton.Text = "TPWALK OFF"
+        tpwalkButton.BackgroundColor3 = Color3.new(0.8, 0.3, 0.3)
+        stopTpwalk()
+        
+        flyButton.Text = "Fly ON"
+        flyButton.BackgroundColor3 = Color3.new(0.3, 0.8, 0.3)
+        startFly()
+    else
+        flyButton.Text = "Fly OFF"
+        flyButton.BackgroundColor3 = Color3.new(0.8, 0.3, 0.3)
+        stopFly()
+    end
+end)
+
+tpwalkButton.MouseButton1Click:Connect(function()
+    isTpwalkEnabled = not isTpwalkEnabled
+    if isTpwalkEnabled then
+        isFlyEnabled = false
+        flyButton.Text = "Fly OFF"
+        flyButton.BackgroundColor3 = Color3.new(0.8, 0.3, 0.3)
+        stopFly()
+
+        tpwalkButton.Text = "TPWALK ON"
+        tpwalkButton.BackgroundColor3 = Color3.new(0.3, 0.8, 0.3)
+        startTpwalk()
+    else
+        tpwalkButton.Text = "TPWALK OFF"
+        tpwalkButton.BackgroundColor3 = Color3.new(0.8, 0.3, 0.3)
+        stopTpwalk()
+    end
+end)
+
+tpwalkValueBox.FocusLost:Connect(function()
+    local inputValue = tonumber(tpwalkValueBox.Text)
+    if inputValue then
+        if not TpwalkNegativeValues and inputValue <= 0 then
+            tpwalkValueBox.Text = "1"
+            TpwalkValue = 1
+        else
+            TpwalkValue = inputValue
+        end
+        tpwalkLabel.Text = "TPWALK Value: " .. TpwalkValue
+    else
+        tpwalkValueBox.Text = tostring(TpwalkValue)
+    end
+end)
+
+tpwalkNegativeButton.MouseButton1Click:Connect(function()
+    TpwalkNegativeValues = not TpwalkNegativeValues
+    if TpwalkNegativeValues then
+        tpwalkNegativeButton.Text = "Negative Values ON"
+        tpwalkNegativeButton.BackgroundColor3 = Color3.new(0.3, 0.8, 0.3)
+    else
+        tpwalkNegativeButton.Text = "Negative Values OFF"
+        tpwalkNegativeButton.BackgroundColor3 = Color3.new(0.8, 0.3, 0.3)
+        if TpwalkValue < 0 then
+            TpwalkValue = 1
+            tpwalkValueBox.Text = "1"
+            tpwalkLabel.Text = "TPWALK Value: 1"
+        end
+    end
+end)
+
+-- Heartbeat loop for dynamic ESP and Character Status
 RunService.Heartbeat:Connect(function()
-    if not humanoidRootPart then return end
+    if not humanoidRootPart or not humanoid then return end
     
     local myPosition = humanoidRootPart.Position
+    local currentHealth = math.floor(humanoid.Health)
+    local characterStatus = humanoid.Health > 0 and "Alive" or "Dead"
+    
+    -- Update status display
+    statusDisplay.Text = string.format(
+        "Posisi: X:%.1f, Y:%.1f, Z:%.1f\nDarah: %d\nStatus: %s",
+        myPosition.X, myPosition.Y, myPosition.Z,
+        currentHealth,
+        characterStatus
+    )
     
     -- Object ESP
     if isObjectEspEnabled then
@@ -811,3 +1282,4 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
+
